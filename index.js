@@ -8,6 +8,7 @@ import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ── Config ────────────────────────────────────────────────────────────────────
 const {
   ANTHROPIC_API_KEY,
   PUSHOVER_USER_KEY,
@@ -16,7 +17,6 @@ const {
 } = process.env;
 
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 const MEMORY_FILE = path.join(__dirname, "data", "memory.json");
@@ -39,12 +39,7 @@ function saveMemory(memory) {
 
 function addToMemory(role, content) {
   const memory = loadMemory();
-  memory.log.push({
-    timestamp: new Date().toISOString(),
-    role,
-    content,
-  });
-  // Keep last 100 entries
+  memory.log.push({ timestamp: new Date().toISOString(), role, content });
   if (memory.log.length > 100) memory.log = memory.log.slice(-100);
   memory.lastUpdate = new Date().toISOString();
   saveMemory(memory);
@@ -52,54 +47,62 @@ function addToMemory(role, content) {
 
 // ── Paolo's Profile ───────────────────────────────────────────────────────────
 const PAOLO_PROFILE = `
-You are Paolo's personal chief of staff — his adaptive, proactive assistant. 
+You are Paolo's personal chief of staff — sharp, adaptive, focused on where he's going, not just where he currently is.
 
-PAOLO'S WORLD:
-- Investment banker, municipal finance @ Loop Capital Markets
-- Currently pitching NTTA (North Texas Tollway Authority) — analyzing $8.8B debt portfolio, identifying high-coupon defeasance candidates, building a mandate pitch
-- Producing his own film: $10K budget, target August 2026
-- Applying to MBA programs: Fall 2027 matriculation
-- Working on GMAT testing accommodations (condition diagnosed 2012)
-- Career north star: converging finance + storytelling (inspired by Darren Walker's move to Anonymous Content)
+WHERE PAOLO IS HEADED (priority — always lead with these):
+- Film production: $10K budget, August 2026 target. Real deadline. Track pre-production milestones.
+- MBA applications: Fall 2027 matriculation. School list, essays, GMAT all need progress.
+- GMAT testing accommodations: condition diagnosed 2012, documentation in progress. Needs to get locked.
+- Career pivot: converging finance + storytelling. North star = Darren Walker's move from Ford Foundation to Anonymous Content. Moving toward IR, strategic finance at tech, or film finance roles.
+- Personal growth — who he's becoming, not just his output.
+
+BACKGROUND CONTEXT (don't surface unless he brings it up):
+- Current job: investment banker, municipal finance at Loop Capital Markets. He'll mention work when it matters. Never ask about deals, clients, or pitches proactively.
 
 YOUR JOB:
-Send 2–4 focused check-in questions. Be specific to his actual work — not generic. Reference what he's told you before when relevant. Push him on things he hasn't updated you on in a while.
+Send 2–3 focused check-in questions per message. Always root them in his goals and transition. Be specific. Reference what he's told you. Flag overdue milestones directly — but only once, not every session.
 
-TONE: Direct, warm, no fluff. Like a trusted advisor who texts, not a bot. No emojis unless he uses them. Keep it under 320 characters per message when possible — this is SMS.
+TONE: Direct, warm, no fluff. A trusted advisor who texts. No emojis unless he uses them. Keep messages concise.
 
-DOMAINS TO ROTATE THROUGH:
-1. NTTA pitch progress — meetings, analysis milestones, competitive intel
-2. Film project — script, crew, budget, shoot date locked?
-3. MBA prep — GMAT accommodations status, school list, essays
-4. Career pivot thinking — any IR/strategic finance/film finance conversations
-5. Weekly wins + blockers — what moved, what's stuck
+QUESTION DOMAINS (rotate in this order):
+1. Film project — script, crew, location, shoot date, budget
+2. MBA prep — GMAT accommodations, school list, essay angle, timeline
+3. Career pivot — networking, conversations, applications
+4. Personal development — reading, creative work, what's energizing or draining
+5. Weekly momentum — what moved, what's stuck, what needs a decision
 
-Use recent conversation history to avoid repeating questions. If something is overdue (like film milestone or GMAT docs), flag it gently.
+Work: engage fully if he raises it. Otherwise, don't touch it.
+Never repeat the same question twice.
 `;
 
-// ── Generate check-in message ─────────────────────────────────────────────────
+// ── Generate check-in ─────────────────────────────────────────────────────────
 async function generateCheckin(timeOfDay) {
   const memory = loadMemory();
-  const recentLog = memory.log.slice(-20);
-  const history = recentLog
+  const history = memory.log
+    .slice(-20)
     .map((e) => `[${e.timestamp.slice(0, 10)} ${e.role}]: ${e.content}`)
     .join("\n");
-
-  const prompt = `It's ${timeOfDay} EST on ${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}.
-
-Recent conversation history:
-${history || "No history yet — this is the first check-in."}
-
-Generate a ${timeOfDay === "morning" ? "morning kickoff" : "evening wind-down"} check-in. 
-${timeOfDay === "morning" ? "Focus on: what's the priority today, any NTTA/deal updates needed, mindset." : "Focus on: what got done, what's blocked, film/MBA progress."}
-
-Write 2–3 SMS-length questions as a single text message. No intro like 'Good morning!' — just get into it. Natural, direct.`;
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 300,
     system: PAOLO_PROFILE,
-    messages: [{ role: "user", content: prompt }],
+    messages: [{
+      role: "user",
+      content: `It's ${timeOfDay} EST on ${new Date().toLocaleDateString("en-US", {
+        weekday: "long", month: "long", day: "numeric",
+      })}.
+
+Recent history:
+${history || "No history yet — first check-in."}
+
+Generate a ${timeOfDay === "morning" ? "morning kickoff" : "evening wind-down"} check-in.
+${timeOfDay === "morning"
+  ? "Focus: one concrete thing he can move on his goals today."
+  : "Focus: honest reflection — what he actually did vs. planned."}
+
+2–3 questions. No greeting — straight into it.`
+    }],
   });
 
   return response.content[0].text;
@@ -108,13 +111,9 @@ Write 2–3 SMS-length questions as a single text message. No intro like 'Good m
 // ── Generate Sunday briefing ──────────────────────────────────────────────────
 async function generateSundayBriefing() {
   const memory = loadMemory();
-  const weekLog = memory.log.filter((e) => {
-    const entryDate = new Date(e.timestamp);
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    return entryDate > weekAgo;
-  });
-
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekLog = memory.log.filter((e) => new Date(e.timestamp) > weekAgo);
   const history = weekLog
     .map((e) => `[${e.timestamp.slice(0, 10)} ${e.role}]: ${e.content}`)
     .join("\n");
@@ -123,30 +122,28 @@ async function generateSundayBriefing() {
     model: "claude-sonnet-4-20250514",
     max_tokens: 800,
     system: PAOLO_PROFILE,
-    messages: [
-      {
-        role: "user",
-        content: `It's Sunday evening. Generate Paolo's weekly briefing based on everything he's told you this week.
+    messages: [{
+      role: "user",
+      content: `Sunday evening briefing. Summarize Paolo's week and orient him for the week ahead.
 
 This week's log:
-${history || "No check-ins logged this week."}
+${history || "No check-ins this week — orient him on his standing goals."}
 
-Structure:
-1. THE WEEK IN REVIEW — what actually happened based on his updates
-2. DEAL PIPELINE — NTTA status, any other work items
-3. PERSONAL GOALS PULSE — film project, MBA, GMAT
-4. GAPS — things he hasn't updated you on (flag honestly)
-5. TOP 3 MONDAY MOVES — specific, actionable
+Structure (concise, under 1200 characters total):
+1. WEEK IN REVIEW — what actually happened (honest)
+2. GOALS PULSE — film, MBA, GMAT, career pivot
+3. GAPS — things that haven't moved and should
+4. WORK NOTES — only if he mentioned work this week; skip otherwise
+5. MONDAY MOVES — 3 specific actions for tomorrow
 
-Keep it tight. This is being sent as SMS so break it into short paragraphs. Total under 1200 characters.`,
-      },
-    ],
+Short paragraphs. Direct. No filler.`
+    }],
   });
 
   return response.content[0].text;
 }
 
-// ── Send SMS ──────────────────────────────────────────────────────────────────
+// ── Send Pushover notification ────────────────────────────────────────────────
 async function sendPush(message) {
   await fetch("https://api.pushover.net/1/messages.json", {
     method: "POST",
@@ -165,50 +162,31 @@ async function sendPush(message) {
 // ── Cron schedule (EST = UTC-5) ───────────────────────────────────────────────
 // Mon, Wed, Fri — 8am EST = 13:00 UTC
 cron.schedule("0 13 * * 1,3,5", async () => {
-  console.log("Running morning check-in...");
   const msg = await generateCheckin("morning");
   await sendPush(msg);
 });
 
-// Mon, Wed, Fri — 8pm EST = 01:00 UTC next day
+// Mon, Wed, Fri — 8pm EST = 01:00 UTC (next calendar day)
 cron.schedule("0 1 * * 2,4,6", async () => {
-  console.log("Running evening check-in...");
   const msg = await generateCheckin("evening");
   await sendPush(msg);
 });
 
 // Sunday — 7pm EST = 00:00 UTC Monday
 cron.schedule("0 0 * * 1", async () => {
-  console.log("Running Sunday briefing...");
   const msg = await generateSundayBriefing();
   await sendPush(msg);
 });
 
-// ── Webhook: receive Paolo's replies ─────────────────────────────────────────
+// ── Express server ────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-app.post("/sms", (req, res) => {
-  const incomingMsg = req.body.Body || "";
-  const from = req.body.From || "";
+app.get("/", (req, res) =>
+  res.json({ status: "Paolo's assistant running", time: new Date().toISOString() })
+);
 
-  console.log(`[${new Date().toISOString()}] Reply from ${from}: ${incomingMsg}`);
-
-  // Log his reply to memory
-  if (incomingMsg.trim()) {
-    addToMemory("paolo", incomingMsg.trim());
-  }
-
-  // Twilio expects TwiML response (empty = no auto-reply)
-  res.set("Content-Type", "text/xml");
-  res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
-});
-
-// Health check
-app.get("/", (req, res) => res.json({ status: "Paolo's assistant is running", time: new Date().toISOString() }));
-
-// Manual trigger endpoints (for testing)
 app.get("/trigger/morning", async (req, res) => {
   const msg = await generateCheckin("morning");
   await sendPush(msg);
@@ -227,17 +205,9 @@ app.get("/trigger/briefing", async (req, res) => {
   res.json({ sent: msg });
 });
 
-app.get("/memory", (req, res) => {
-  res.json(loadMemory());
-});
+app.get("/memory", (req, res) => res.json(loadMemory()));
 
 app.listen(PORT, () => {
   console.log(`Paolo's assistant running on port ${PORT}`);
-  console.log("Schedule: Check-ins Mon/Wed/Fri 8am+8pm EST | Briefing Sunday 7pm EST");
+  console.log("Mon/Wed/Fri 8am + 8pm EST | Sunday 7pm briefing");
 });
-
-[phases.build]
-cmds = ["npm install"]
-
-[start]
-cmd = "node index.js"
