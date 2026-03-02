@@ -1,22 +1,18 @@
 {
   "name": "paolo-assistant",
   "version": "1.0.0",
-  "description": "Paolo's personal chief of staff — SMS check-ins + Sunday briefings",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js"
+    "start": "node index.js"
   },
   "dependencies": {
-  "@anthropic-ai/sdk": "^0.24.0",
-  "express": "^4.18.2",
-  "node-cron": "^3.0.3",
-  "node-fetch": "^3.3.2"
+    "@anthropic-ai/sdk": "^0.24.0",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
-```
-
-**5. Update your Railway environment variables — remove Twilio vars, add:**
-```
-PUSHOVER_USER_KEY    → your user key (from pushover.net dashboard)
-PUSHOVER_API_TOKEN   → your app token (create an app called "Chief of Staff")
