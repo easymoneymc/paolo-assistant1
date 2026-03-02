@@ -235,3 +235,9 @@ app.listen(PORT, () => {
   console.log(`Paolo's assistant running on port ${PORT}`);
   console.log("Schedule: Check-ins Mon/Wed/Fri 8am+8pm EST | Briefing Sunday 7pm EST");
 });
+
+[phases.build]
+cmds = ["npm install"]
+
+[start]
+cmd = "node index.js"
