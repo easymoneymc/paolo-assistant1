@@ -1,20 +1,17 @@
 import express from "express";
 import cron from "node-cron";
 import Anthropic from "@anthropic-ai/sdk";
-import twilio from "twilio";
+import fetch from "node-fetch";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ── Config ────────────────────────────────────────────────────────────────────
 const {
   ANTHROPIC_API_KEY,
-  TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN,
-  TWILIO_FROM_NUMBER,
-  MY_PHONE_NUMBER,
+  PUSHOVER_USER_KEY,
+  PUSHOVER_API_TOKEN,
   PORT = 3000,
 } = process.env;
 
@@ -150,13 +147,18 @@ Keep it tight. This is being sent as SMS so break it into short paragraphs. Tota
 }
 
 // ── Send SMS ──────────────────────────────────────────────────────────────────
-async function sendSMS(message) {
-  await twilioClient.messages.create({
-    body: message,
-    from: TWILIO_FROM_NUMBER,
-    to: MY_PHONE_NUMBER,
+async function sendPush(message) {
+  await fetch("https://api.pushover.net/1/messages.json", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: PUSHOVER_API_TOKEN,
+      user: PUSHOVER_USER_KEY,
+      message: message,
+      title: "Chief of Staff",
+    }),
   });
-  console.log(`[${new Date().toISOString()}] SMS sent: ${message.slice(0, 60)}...`);
+  console.log(`[${new Date().toISOString()}] Push sent: ${message.slice(0, 60)}...`);
   addToMemory("assistant", message);
 }
 
@@ -165,21 +167,21 @@ async function sendSMS(message) {
 cron.schedule("0 13 * * 1,3,5", async () => {
   console.log("Running morning check-in...");
   const msg = await generateCheckin("morning");
-  await sendSMS(msg);
+  await sendPush(msg);
 });
 
 // Mon, Wed, Fri — 8pm EST = 01:00 UTC next day
 cron.schedule("0 1 * * 2,4,6", async () => {
   console.log("Running evening check-in...");
   const msg = await generateCheckin("evening");
-  await sendSMS(msg);
+  await sendPush(msg);
 });
 
 // Sunday — 7pm EST = 00:00 UTC Monday
 cron.schedule("0 0 * * 1", async () => {
   console.log("Running Sunday briefing...");
   const msg = await generateSundayBriefing();
-  await sendSMS(msg);
+  await sendPush(msg);
 });
 
 // ── Webhook: receive Paolo's replies ─────────────────────────────────────────
@@ -209,19 +211,19 @@ app.get("/", (req, res) => res.json({ status: "Paolo's assistant is running", ti
 // Manual trigger endpoints (for testing)
 app.get("/trigger/morning", async (req, res) => {
   const msg = await generateCheckin("morning");
-  await sendSMS(msg);
+  await sendPush(msg);
   res.json({ sent: msg });
 });
 
 app.get("/trigger/evening", async (req, res) => {
   const msg = await generateCheckin("evening");
-  await sendSMS(msg);
+  await sendPush(msg);
   res.json({ sent: msg });
 });
 
 app.get("/trigger/briefing", async (req, res) => {
   const msg = await generateSundayBriefing();
-  await sendSMS(msg);
+  await sendPush(msg);
   res.json({ sent: msg });
 });
 
